@@ -26,6 +26,7 @@ type message struct {
 	IsReaction           bool   `json:"is_reaction"`
 	Text                 string `json:"text"`
 	CreatedAt            string `json:"created_at"`
+	Mutation             string `json:"type"`
 }
 
 // Watch feeds every message from imsg through handle, resubscribing from the saved cursor whenever imsg starts.
@@ -86,7 +87,7 @@ func (g *Gateway) handle(ctx context.Context, m message) error {
 
 // route returns the inbox entries m produces. Anything unrouted or unauthorized produces none.
 func (g *Gateway) route(ctx context.Context, m message) []store.Delivery {
-	if m.IsFromMe || m.IsReaction || strings.TrimSpace(m.Text) == "" {
+	if m.IsFromMe || m.IsReaction || m.Mutation != "" || strings.TrimSpace(m.Text) == "" {
 		return nil
 	}
 	cfg := g.config()

@@ -442,6 +442,31 @@ func TestDrops(t *testing.T) {
 	equal(t, rowid, 6)
 }
 
+// imsg reports an edit as the original message's id and guid with the new text and "type": "edited".
+func TestEditsAreDropped(t *testing.T) {
+	e := newEnv(t)
+	s := e.mcp()
+	sent := e.tool(s, "text_user", map[string]any{"text": "Deploy?", "name": "deploy"})
+	reply := e.text(ana, "", "yes", sent["message_guid"].(string))
+	plain := e.text(ana, "", "balance?", "")
+	dm := "any;-;" + ana
+	for _, edit := range []string{
+		fmt.Sprintf(`{"id": 1, "guid": %q, "sender": %q, "chat_guid": %q, "thread_originator_guid": %q, "text": "/close", "type": "edited"}`,
+			reply, ana, dm, sent["message_guid"]),
+		fmt.Sprintf(`{"id": 2, "guid": %q, "sender": %q, "chat_guid": %q, "text": "@budget balance?", "type": "edited"}`, plain, ana, dm),
+	} {
+		var m message
+		if err := json.Unmarshal([]byte(edit), &m); err != nil {
+			t.Fatal(err)
+		}
+		e.handle(m)
+	}
+
+	thread, _ := e.g.store.Thread(sent["thread_id"].(string))
+	equal(t, map[string]any{"budget inbox": len(e.inbox("budget")), "thread open": thread.Open},
+		map[string]any{"budget inbox": 0, "thread open": true})
+}
+
 func TestRedeliveryKeepsIDAndSeq(t *testing.T) {
 	e := newEnv(t)
 	m := message{ID: 7, GUID: "in-7", Sender: ana, ChatGUID: "any;-;" + ana, Text: "@budget hi"}
