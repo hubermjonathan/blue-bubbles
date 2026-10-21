@@ -19,15 +19,21 @@ The owner can inline-reply `/close` to a thread's text to stop that session from
 
 ## Run it
 
-1. Install `imsg` and the gateway:
+On a machine set up by [dot](https://github.com/hubermjonathan/dot), the `blue-bubbles` module does steps 1, 2, and 5. Elsewhere, do them by hand.
+
+1. Create a self-signed code-signing certificate named `blue-bubbles` in your login keychain. Full Disk Access is tied to the binary's signature. An ad-hoc signature changes with every build, but a certificate's doesn't, so the grant survives upgrades.
+2. Install `imsg` and the gateway, and sign the gateway:
 
        brew install steipete/tap/imsg
        go install github.com/hubermjonathan/blue-bubbles@latest
+       codesign -fs blue-bubbles ~/go/bin/blue-bubbles
 
-2. Write `~/.config/blue-bubbles/config.yaml` from [`config.example.yaml`](config.example.yaml), and `chmod 600` it. Make each token with `openssl rand -hex 32`.
-3. Give `~/go/bin/blue-bubbles` Full Disk Access in **System Settings > Privacy & Security > Full Disk Access**. A rebuilt binary needs the grant again: remove it from the list and add it back.
-4. Run the gateway as a launch agent, so it starts at login and restarts if it exits. On a machine set up by [dot](https://github.com/hubermjonathan/dot), the `blue-bubbles` module does this.
-5. Approve the prompt that asks to let `blue-bubbles` control Messages. It appears on the first send.
+3. Write `~/.config/blue-bubbles/config.yaml` from [`config.example.yaml`](config.example.yaml), and `chmod 600` it. Make each token with `openssl rand -hex 32`.
+4. Give `~/go/bin/blue-bubbles` Full Disk Access in **System Settings > Privacy & Security > Full Disk Access**.
+5. Run the gateway as a launch agent, so it starts at login and restarts if it exits.
+6. Approve the prompt that asks to let `blue-bubbles` control Messages. It appears on the first send.
+
+To upgrade, run the `go install` and `codesign` lines again, then `launchctl kickstart -k gui/$(id -u)/com.hubermjonathan.blue-bubbles`.
 
 The gateway listens on port 8723 on every interface. Reach it from your other machines by the gateway Mac's Tailscale name. It logs to stderr, including the GUID and name of each new chat, which is how you find a group's `chat_guid` for the config.
 
