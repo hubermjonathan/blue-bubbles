@@ -1,4 +1,5 @@
-package main
+// Package store keeps the gateway's state in one SQLite file: the watch cursor, inboxes, routes, and threads.
+package store
 
 import (
 	"crypto/rand"
@@ -35,20 +36,21 @@ CREATE TABLE IF NOT EXISTS inbox (
 	UNIQUE (sender, id)
 );`
 
-type store struct{ db *sql.DB }
+type Store struct{ db *sql.DB }
 
-type thread struct {
+type Thread struct {
 	ID, Name, WatchKey   string
 	Open                 bool
 	ReadSeq, NotifiedSeq int64
 }
 
-type delivery struct {
-	sender, id string
-	entry      map[string]any
+// Delivery is one inbox entry for one sender: an agent ("agent:<name>") or a thread ("thread:<id>").
+type Delivery struct {
+	Sender, ID string
+	Entry      map[string]any
 }
 
-func openStore(path string) (*store, error) {
+func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
@@ -60,10 +62,10 @@ func openStore(path string) (*store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}
-	return &store{db}, nil
+	return &Store{db}, nil
 }
 
-func (s *store) cursor() (rowid int64, err error) {
+func (s *Store) Cursor() (rowid int64, err error) {
 	err = s.db.QueryRow(`SELECT value FROM state WHERE key = 'rowid'`).Scan(&rowid)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = nil
@@ -71,21 +73,21 @@ func (s *store) cursor() (rowid int64, err error) {
 	return rowid, err
 }
 
-// deliver appends ds to their inboxes and advances the watch cursor past rowid in one transaction,
+// Deliver appends ds to their inboxes and advances the watch cursor past rowid in one transaction,
 // so a crash redelivers a message at most, and a redelivered entry keeps its id and seq.
-func (s *store) deliver(rowid int64, ds []delivery) error {
+func (s *Store) Deliver(rowid int64, ds []Delivery) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	for _, d := range ds {
-		b, err := json.Marshal(d.entry)
+		b, err := json.Marshal(d.Entry)
 		if err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`INSERT OR IGNORE INTO inbox (sender, id, entry, created_at) VALUES (?, ?, ?, ?)`,
-			d.sender, d.id, b, time.Now().Unix()); err != nil {
+			d.Sender, d.ID, b, time.Now().Unix()); err != nil {
 			return err
 		}
 	}
@@ -96,7 +98,7 @@ func (s *store) deliver(rowid int64, ds []delivery) error {
 	return tx.Commit()
 }
 
-func (s *store) entries(sender string, after int64) ([]map[string]any, error) {
+func (s *Store) Entries(sender string, after int64) ([]map[string]any, error) {
 	rows, err := s.db.Query(`SELECT seq, entry FROM inbox WHERE sender = ? AND seq > ? ORDER BY seq LIMIT 100`, sender, after)
 	if err != nil {
 		return nil, err
@@ -119,17 +121,17 @@ func (s *store) entries(sender string, after int64) ([]map[string]any, error) {
 	return out, rows.Err()
 }
 
-func (s *store) lastSeq(sender string) (seq int64, err error) {
+func (s *Store) LastSeq(sender string) (seq int64, err error) {
 	err = s.db.QueryRow(`SELECT coalesce(max(seq), 0) FROM inbox WHERE sender = ?`, sender).Scan(&seq)
 	return seq, err
 }
 
-func (s *store) prune(before time.Time) error {
+func (s *Store) Prune(before time.Time) error {
 	_, err := s.db.Exec(`DELETE FROM inbox WHERE created_at < ?`, before.Unix())
 	return err
 }
 
-func (s *store) newChat(guid string) (bool, error) {
+func (s *Store) NewChat(guid string) (bool, error) {
 	res, err := s.db.Exec(`INSERT OR IGNORE INTO chats (guid) VALUES (?)`, guid)
 	if err != nil {
 		return false, err
@@ -138,12 +140,12 @@ func (s *store) newChat(guid string) (bool, error) {
 	return n == 1, err
 }
 
-func (s *store) addRoute(guid, sender string) error {
+func (s *Store) AddRoute(guid, sender string) error {
 	_, err := s.db.Exec(`INSERT OR REPLACE INTO routes (guid, sender) VALUES (?, ?)`, guid, sender)
 	return err
 }
 
-func (s *store) route(guid string) (sender string, err error) {
+func (s *Store) Route(guid string) (sender string, err error) {
 	err = s.db.QueryRow(`SELECT sender FROM routes WHERE guid = ?`, guid).Scan(&sender)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = nil
@@ -151,9 +153,9 @@ func (s *store) route(guid string) (sender string, err error) {
 	return sender, err
 }
 
-// newThread opens a thread, naming it name-2, name-3, and so on when an open thread already has the name.
-func (s *store) newThread(name string) (*thread, error) {
-	t := &thread{ID: randomHex(), WatchKey: randomHex(), Open: true, Name: name}
+// NewThread opens a thread, naming it name-2, name-3, and so on when an open thread already has the name.
+func (s *Store) NewThread(name string) (*Thread, error) {
+	t := &Thread{ID: randomHex(), WatchKey: randomHex(), Open: true, Name: name}
 	for n := 2; ; n++ {
 		var taken bool
 		if err := s.db.QueryRow(`SELECT count(*) > 0 FROM threads WHERE open AND name = ?`, t.Name).Scan(&taken); err != nil {
@@ -168,8 +170,8 @@ func (s *store) newThread(name string) (*thread, error) {
 	return t, err
 }
 
-func (s *store) thread(id string) (*thread, error) {
-	t := &thread{ID: id}
+func (s *Store) Thread(id string) (*Thread, error) {
+	t := &Thread{ID: id}
 	err := s.db.QueryRow(`SELECT name, open, read_seq, notified_seq, watch_key FROM threads WHERE id = ?`, id).
 		Scan(&t.Name, &t.Open, &t.ReadSeq, &t.NotifiedSeq, &t.WatchKey)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -178,7 +180,7 @@ func (s *store) thread(id string) (*thread, error) {
 	return t, err
 }
 
-func (s *store) closeThread(id string) (wasOpen bool, err error) {
+func (s *Store) CloseThread(id string) (wasOpen bool, err error) {
 	res, err := s.db.Exec(`UPDATE threads SET open = 0 WHERE id = ? AND open`, id)
 	if err != nil {
 		return false, err
@@ -187,13 +189,13 @@ func (s *store) closeThread(id string) (wasOpen bool, err error) {
 	return n == 1, err
 }
 
-// markRead also marks the replies notified, so a watcher doesn't announce replies already read.
-func (s *store) markRead(id string, seq int64) error {
+// MarkRead also marks the replies notified, so a watcher doesn't announce replies already read.
+func (s *Store) MarkRead(id string, seq int64) error {
 	_, err := s.db.Exec(`UPDATE threads SET read_seq = max(read_seq, ?1), notified_seq = max(notified_seq, ?1) WHERE id = ?2`, seq, id)
 	return err
 }
 
-func (s *store) markNotified(id string, seq int64) error {
+func (s *Store) MarkNotified(id string, seq int64) error {
 	_, err := s.db.Exec(`UPDATE threads SET notified_seq = max(notified_seq, ?) WHERE id = ?`, seq, id)
 	return err
 }
