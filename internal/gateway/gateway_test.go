@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"bufio"
@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hubermjonathan/blue-bubbles/internal/config"
+	"github.com/hubermjonathan/blue-bubbles/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -52,7 +54,7 @@ type fakeIMsg struct {
 	history []message
 }
 
-func (f *fakeIMsg) call(_ context.Context, method string, params, out any) error {
+func (f *fakeIMsg) Call(_ context.Context, method string, params, out any) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var res any
@@ -77,18 +79,18 @@ func (f *fakeIMsg) last() map[string]any {
 
 type env struct {
 	t     *testing.T
-	g     *gateway
+	g     *Gateway
 	f     *fakeIMsg
 	srv   *httptest.Server
 	rowid int64
 }
 
 func newEnv(t *testing.T) *env {
-	cfg, err := parseConfig([]byte(testConfig))
+	cfg, err := config.Parse([]byte(testConfig))
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := openStore(filepath.Join(t.TempDir(), "state.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,9 +101,9 @@ func newEnv(t *testing.T) *env {
 		}
 		return "iMessage", nil
 	}
-	g := newGateway(func() *Config { return cfg }, st, f, service)
-	go g.sendLoop()
-	srv := httptest.NewServer(g.routes())
+	g := New(func() *config.Config { return cfg }, st, f, service)
+	go g.SendLoop()
+	srv := httptest.NewServer(g.Routes())
 	t.Cleanup(srv.Close)
 	return &env{t: t, g: g, f: f, srv: srv}
 }
@@ -436,7 +438,7 @@ func TestDrops(t *testing.T) {
 	e.handle(message{ID: 5, GUID: "in-5", Sender: ana, ChatGUID: "any;-;" + ana, Text: "mail me@budget.com"})
 	e.handle(message{ID: 6, GUID: "in-6", Sender: ana, ChatGUID: "any;-;" + ana, Text: "Loved “@budget hi”", IsReaction: true})
 	equal(t, len(e.inbox("budget")), 0)
-	rowid, _ := e.g.store.cursor()
+	rowid, _ := e.g.store.Cursor()
 	equal(t, rowid, 6)
 }
 
@@ -458,20 +460,6 @@ func TestLongTextSplitsWithHeaders(t *testing.T) {
 		text := p["text"].(string)
 		if !strings.HasPrefix(text, "🤖 𝗯𝘂𝗱𝗴𝗲𝘁\n\n") || len([]rune(text)) > maxMessageLen {
 			t.Fatalf("chunk without a header or too long: %d runes", len([]rune(text)))
-		}
-	}
-}
-
-func TestConfigRejectsBadValues(t *testing.T) {
-	for _, bad := range []string{
-		strings.Replace(testConfig, "owner: ana", "owner: pat", 1),
-		strings.Replace(testConfig, `ben: "+15550000002"`, `ben: "5550000002"`, 1),
-		strings.Replace(testConfig, "history: 2", "history: 21", 1),
-		strings.Replace(testConfig, "ana: write, ben: read", "ana: write, ben: admin", 1),
-		strings.Replace(testConfig, "garden-token", "budget-token", 1),
-	} {
-		if _, err := parseConfig([]byte(bad)); err == nil {
-			t.Errorf("accepted a bad config:\n%s", bad)
 		}
 	}
 }

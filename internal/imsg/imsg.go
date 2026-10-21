@@ -1,4 +1,5 @@
-package main
+// Package imsg runs `imsg rpc` as a child process and speaks JSON-RPC over its stdio.
+package imsg
 
 import (
 	"bufio"
@@ -14,8 +15,8 @@ import (
 	"time"
 )
 
-// imsg runs `imsg rpc` as a child process, restarts it when it exits, and speaks JSON-RPC over its stdio.
-type imsg struct {
+// Client runs `imsg rpc`, restarts it when it exits, and matches each reply to its call.
+type Client struct {
 	path string
 
 	mu      sync.Mutex
@@ -24,13 +25,13 @@ type imsg struct {
 	next    int64
 	pending map[int64]chan rpcReply
 
-	// events carries notifications, plus a "started" event each time the child starts.
+	// Events carries notifications, plus a "started" event each time the child starts.
 	// Its buffer is larger than imsg's largest watch buffer, so the reader never blocks
 	// on it while the event loop waits on a call that the reader has to answer.
-	events chan rpcEvent
+	Events chan Event
 }
 
-type rpcEvent struct {
+type Event struct {
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params"`
 }
@@ -38,22 +39,22 @@ type rpcEvent struct {
 type rpcReply struct {
 	ID     *int64          `json:"id"`
 	Result json.RawMessage `json:"result"`
-	Error  *rpcError       `json:"error"`
+	Error  *Error          `json:"error"`
 }
 
-type rpcError struct {
+type Error struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data"`
 }
 
-func (e *rpcError) Error() string { return fmt.Sprintf("imsg: %s (%d) %s", e.Message, e.Code, e.Data) }
+func (e *Error) Error() string { return fmt.Sprintf("imsg: %s (%d) %s", e.Message, e.Code, e.Data) }
 
-func newIMsg(path string) *imsg {
-	return &imsg{path: path, pending: map[int64]chan rpcReply{}, events: make(chan rpcEvent, 8192)}
+func New(path string) *Client {
+	return &Client{path: path, pending: map[int64]chan rpcReply{}, Events: make(chan Event, 8192)}
 }
 
-func (c *imsg) run() {
+func (c *Client) Run() {
 	for {
 		if err := c.runOnce(); err != nil {
 			log.Printf("imsg: %v", err)
@@ -62,7 +63,7 @@ func (c *imsg) run() {
 	}
 }
 
-func (c *imsg) runOnce() error {
+func (c *Client) runOnce() error {
 	cmd := exec.Command(c.path, "rpc")
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
@@ -79,21 +80,21 @@ func (c *imsg) runOnce() error {
 	c.mu.Lock()
 	c.cmd, c.stdin = cmd, stdin
 	c.mu.Unlock()
-	c.events <- rpcEvent{Method: "started"}
+	c.Events <- Event{Method: "started"}
 
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 64<<10), 16<<20)
 	for sc.Scan() {
 		var r struct {
 			rpcReply
-			rpcEvent
+			Event
 		}
 		if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
 			log.Printf("imsg: unreadable line: %v", err)
 			continue
 		}
 		if r.ID == nil {
-			c.events <- r.rpcEvent
+			c.Events <- r.Event
 			continue
 		}
 		c.mu.Lock()
@@ -108,14 +109,14 @@ func (c *imsg) runOnce() error {
 	c.mu.Lock()
 	c.cmd, c.stdin = nil, nil
 	for id, ch := range c.pending {
-		ch <- rpcReply{Error: &rpcError{Message: "imsg exited"}}
+		ch <- rpcReply{Error: &Error{Message: "imsg exited"}}
 		delete(c.pending, id)
 	}
 	c.mu.Unlock()
 	return cmd.Wait()
 }
 
-func (c *imsg) restart() {
+func (c *Client) Restart() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.cmd != nil {
@@ -123,7 +124,7 @@ func (c *imsg) restart() {
 	}
 }
 
-func (c *imsg) call(ctx context.Context, method string, params, out any) error {
+func (c *Client) Call(ctx context.Context, method string, params, out any) error {
 	c.mu.Lock()
 	if c.stdin == nil {
 		c.mu.Unlock()

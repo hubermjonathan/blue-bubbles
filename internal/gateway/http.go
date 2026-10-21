@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"crypto/subtle"
@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hubermjonathan/blue-bubbles/internal/config"
 )
 
 // watcher identifies one run of a watch_command: when it started, and a random id it picked.
@@ -21,7 +23,7 @@ func (w watcher) after(o watcher) bool {
 	return w.start > o.start || (w.start == o.start && w.id > o.id)
 }
 
-func (g *gateway) routes() http.Handler {
+func (g *Gateway) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /send", g.agentOnly(g.handleSend))
 	mux.HandleFunc("GET /inbox", g.agentOnly(g.handleInbox))
@@ -39,7 +41,7 @@ func tokenEqual(got, want string) bool {
 	return want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
-func (g *gateway) agentOnly(h func(http.ResponseWriter, *http.Request, *Config, string)) http.HandlerFunc {
+func (g *Gateway) agentOnly(h func(http.ResponseWriter, *http.Request, *config.Config, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := g.config()
 		for name, a := range cfg.Agents {
@@ -52,7 +54,7 @@ func (g *gateway) agentOnly(h func(http.ResponseWriter, *http.Request, *Config, 
 	}
 }
 
-func (g *gateway) handleSend(w http.ResponseWriter, r *http.Request, cfg *Config, name string) {
+func (g *Gateway) handleSend(w http.ResponseWriter, r *http.Request, cfg *config.Config, name string) {
 	var req struct {
 		To struct {
 			ChatGUID string `json:"chat_guid"`
@@ -73,7 +75,7 @@ func (g *gateway) handleSend(w http.ResponseWriter, r *http.Request, cfg *Config
 		_, allowed = a.Members[req.To.Person]
 	} else {
 		to = target{chatGUID: req.To.ChatGUID}
-		allowed = slices.Contains(a.Groups, to.chatGUID) || cfg.memberDM(a, to.chatGUID)
+		allowed = slices.Contains(a.Groups, to.chatGUID) || cfg.MemberDM(a, to.chatGUID)
 	}
 	if !allowed {
 		http.Error(w, "not a member's direct chat or one of this agent's groups", http.StatusForbidden)
@@ -87,12 +89,12 @@ func (g *gateway) handleSend(w http.ResponseWriter, r *http.Request, cfg *Config
 	writeJSON(w, map[string]string{"message_guid": guid})
 }
 
-func (g *gateway) handleInbox(w http.ResponseWriter, r *http.Request, cfg *Config, name string) {
+func (g *Gateway) handleInbox(w http.ResponseWriter, r *http.Request, cfg *config.Config, name string) {
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 	var entries []map[string]any
 	err := g.waitFor(r.Context(), waitParam(r), func() (bool, error) {
 		var err error
-		entries, err = g.store.entries("agent:"+name, after)
+		entries, err = g.store.Entries("agent:"+name, after)
 		return len(entries) > 0, err
 	})
 	if err != nil {
@@ -102,10 +104,10 @@ func (g *gateway) handleInbox(w http.ResponseWriter, r *http.Request, cfg *Confi
 	writeJSON(w, map[string]any{"entries": entries})
 }
 
-func (g *gateway) handleWatch(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) handleWatch(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	q := r.URL.Query()
-	t, err := g.store.thread(id)
+	t, err := g.store.Thread(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -136,11 +138,11 @@ func (g *gateway) handleWatch(w http.ResponseWriter, r *http.Request) {
 		g.mu.Lock()
 		current := g.watchers[id] == me
 		g.mu.Unlock()
-		t, err := g.store.thread(id)
+		t, err := g.store.Thread(id)
 		if err != nil {
 			return false, err
 		}
-		last, err := g.store.lastSeq("thread:" + id)
+		last, err := g.store.LastSeq("thread:" + id)
 		switch {
 		case err != nil:
 		case !t.Open:
@@ -149,7 +151,7 @@ func (g *gateway) handleWatch(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusConflict
 		case last > t.NotifiedSeq:
 			status = http.StatusOK
-			err = g.store.markNotified(id, last)
+			err = g.store.MarkNotified(id, last)
 		}
 		return status != http.StatusNoContent, err
 	})

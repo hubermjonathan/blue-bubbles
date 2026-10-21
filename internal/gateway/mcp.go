@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hubermjonathan/blue-bubbles/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -55,7 +56,7 @@ var hostRE = regexp.MustCompile(`^[A-Za-z0-9.:\[\]-]+$`)
 
 // mcpHandler serves a stateless MCP server, so sessions survive a gateway restart.
 // Each request gets its own server, which knows the host the client reached, for watch_command.
-func (g *gateway) mcpHandler() http.Handler {
+func (g *Gateway) mcpHandler() http.Handler {
 	cache := mcp.NewSchemaCache()
 	h := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return g.mcpServer(cache, "http://"+r.Host)
@@ -73,7 +74,7 @@ func (g *gateway) mcpHandler() http.Handler {
 	})
 }
 
-func (g *gateway) mcpServer(cache *mcp.SchemaCache, base string) *mcp.Server {
+func (g *Gateway) mcpServer(cache *mcp.SchemaCache, base string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "blue-bubbles", Version: "1"},
 		&mcp.ServerOptions{Instructions: instructions, SchemaCache: cache})
 	mcp.AddTool(s, &mcp.Tool{Name: "text_user", Description: textUserDescription},
@@ -106,22 +107,22 @@ func (g *gateway) mcpServer(cache *mcp.SchemaCache, base string) *mcp.Server {
 	return s
 }
 
-func (g *gateway) thread(id string) (*thread, error) {
-	t, err := g.store.thread(id)
+func (g *Gateway) thread(id string) (*store.Thread, error) {
+	t, err := g.store.Thread(id)
 	if err == nil && t == nil {
 		err = fmt.Errorf("no thread %q; omit thread_id to start one", id)
 	}
 	return t, err
 }
 
-func (g *gateway) textUser(ctx context.Context, base string, in textUserIn) (textUserOut, error) {
+func (g *Gateway) textUser(ctx context.Context, base string, in textUserIn) (textUserOut, error) {
 	if strings.TrimSpace(in.Text) == "" {
 		return textUserOut{}, errors.New("text is empty")
 	}
-	var t *thread
+	var t *store.Thread
 	var err error
 	if in.ThreadID == "" {
-		t, err = g.store.newThread(threadName(in.Name))
+		t, err = g.store.NewThread(threadName(in.Name))
 	} else if t, err = g.thread(in.ThreadID); err == nil && !t.Open {
 		err = errors.New("this thread is closed, so the user gets no more texts from this session")
 	}
@@ -136,7 +137,7 @@ func (g *gateway) textUser(ctx context.Context, base string, in textUserIn) (tex
 	return textUserOut{ThreadID: t.ID, MessageGUID: guid, WatchCommand: watchCommand(base, t)}, nil
 }
 
-func (g *gateway) replies(ctx context.Context, id string, wait time.Duration) (repliesOut, error) {
+func (g *Gateway) replies(ctx context.Context, id string, wait time.Duration) (repliesOut, error) {
 	out := repliesOut{Replies: []map[string]any{}}
 	t, err := g.thread(id)
 	if err != nil {
@@ -147,11 +148,11 @@ func (g *gateway) replies(ctx context.Context, id string, wait time.Duration) (r
 	}
 	err = g.waitFor(ctx, wait, func() (bool, error) {
 		var err error
-		out.Replies, err = g.store.entries("thread:"+id, t.ReadSeq)
+		out.Replies, err = g.store.Entries("thread:"+id, t.ReadSeq)
 		return len(out.Replies) > 0, err
 	})
 	if n := len(out.Replies); err == nil && n > 0 {
-		err = g.store.markRead(id, out.Replies[n-1]["seq"].(int64))
+		err = g.store.MarkRead(id, out.Replies[n-1]["seq"].(int64))
 	}
 	return out, err
 }
@@ -169,7 +170,7 @@ func threadName(name string) string {
 
 // watchCommand prints one line each time the user replies, retries through timeouts and network errors,
 // and exits once a newer watcher takes over or the thread closes.
-func watchCommand(base string, t *thread) string {
+func watchCommand(base string, t *store.Thread) string {
 	u := fmt.Sprintf("%s/watch/%s?key=%s&wait=50", base, t.ID, t.WatchKey)
 	return `sh -c 'u="` + u + `&w=$(od -An -N8 -tx1 /dev/urandom | tr -d " \n")&t=$(date +%s)"; ` +
 		`while :; do r=$(curl -s -m 70 -w "\n%{http_code}" "$u") || { sleep 5; continue; }; ` +
