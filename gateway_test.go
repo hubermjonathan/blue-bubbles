@@ -249,7 +249,7 @@ func TestAgentAnswersInDM(t *testing.T) {
 	code, out := e.agentSend("budget", `{"chat_guid": "any;-;`+jon+`"}`, "Groceries: $412 of $600")
 	equal(t, code, 200)
 	equal(t, out["message_guid"], "out-1")
-	equal(t, e.f.last()["text"], "🤖 𝗯𝘂𝗱𝗴𝗲𝘁\nGroceries: $412 of $600")
+	equal(t, e.f.last()["text"], "🤖 𝗯𝘂𝗱𝗴𝗲𝘁\n\nGroceries: $412 of $600")
 	equal(t, e.f.last()["chat_guid"], "any;-;"+jon)
 
 	e.agentSend("budget", `{"person": "jac"}`, "hi")
@@ -327,7 +327,7 @@ func TestThreadRepliesAndWatcher(t *testing.T) {
 	e := newEnv(t)
 	s := e.mcp()
 	sent := e.tool(s, "text_user", map[string]any{"text": "Tests pass. Deploy?", "name": "deploy"})
-	equal(t, e.f.last()["text"], "🧵 𝗱𝗲𝗽𝗹𝗼𝘆\nTests pass. Deploy?")
+	equal(t, e.f.last()["text"], "🧵 𝗱𝗲𝗽𝗹𝗼𝘆\n\nTests pass. Deploy?")
 	equal(t, e.f.last()["to"], jon)
 	id := sent["thread_id"].(string)
 
@@ -347,7 +347,7 @@ func TestThreadRepliesAndWatcher(t *testing.T) {
 	again := e.tool(s, "text_user", map[string]any{"text": "Deployed", "thread_id": id})
 	equal(t, again["thread_id"], id)
 	other := e.tool(s, "text_user", map[string]any{"text": "hi", "name": "deploy"})
-	equal(t, e.f.last()["text"], "🧵 𝗱𝗲𝗽𝗹𝗼𝘆-𝟮\nhi")
+	equal(t, e.f.last()["text"], "🧵 𝗱𝗲𝗽𝗹𝗼𝘆-𝟮\n\nhi")
 	if other["thread_id"] == id {
 		t.Fatal("a second session reused the first thread")
 	}
@@ -377,7 +377,7 @@ func TestCloseByReply(t *testing.T) {
 	if _, ok := receive(t, lines); ok {
 		t.Fatal("the watcher printed instead of exiting")
 	}
-	for deadline := time.Now().Add(3 * time.Second); e.f.last()["text"] != "🧵 𝗱𝗲𝗽𝗹𝗼𝘆\nclosed"; time.Sleep(50 * time.Millisecond) {
+	for deadline := time.Now().Add(3 * time.Second); e.f.last()["text"] != "🧵 𝗱𝗲𝗽𝗹𝗼𝘆\n\nclosed"; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("got %q, want the closed notice", e.f.last()["text"])
 		}
@@ -456,7 +456,7 @@ func TestLongTextSplitsWithHeaders(t *testing.T) {
 	equal(t, len(e.f.sent), 3)
 	for _, p := range e.f.sent {
 		text := p["text"].(string)
-		if !strings.HasPrefix(text, "🤖 𝗯𝘂𝗱𝗴𝗲𝘁\n") || len([]rune(text)) > maxMessageLen {
+		if !strings.HasPrefix(text, "🤖 𝗯𝘂𝗱𝗴𝗲𝘁\n\n") || len([]rune(text)) > maxMessageLen {
 			t.Fatalf("chunk without a header or too long: %d runes", len([]rune(text)))
 		}
 	}
