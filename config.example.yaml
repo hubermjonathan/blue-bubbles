@@ -1,0 +1,11 @@
+owner: ana
+people:
+  ana: "+15551234567"
+  ben: "+15557654321"
+agents:
+  budget:
+    token: <openssl rand -hex 32>
+    members: { ana: write, ben: read }
+    groups: ["any;+;chat123456789"]
+    history: 5
+mcp_token: <openssl rand -hex 32>
