@@ -32,7 +32,7 @@ The owner can inline-reply `/close` to a thread's text to stop that session from
 2. Install `imsg` and the gateway, and sign the gateway:
 
        brew install steipete/tap/imsg
-       go install github.com/hubermjonathan/blue-bubbles@latest
+       go install github.com/hubermjonathan/blue-bubbles/cmd/blue-bubbles@latest
        codesign -fs blue-bubbles ~/go/bin/blue-bubbles
 
 3. Write `~/.config/blue-bubbles/config.yaml` from [`config.example.yaml`](config.example.yaml), and `chmod 600` it. Make each token with `openssl rand -hex 32`.
@@ -188,3 +188,11 @@ The loop polls `GET /watch/<thread_id>?key=<watch_key>&wait=50&w=<watcher_id>&t=
     go test ./...
 
 The tests run the gateway against a fake `imsg`, and run each `watch_command` in `sh` against a test server.
+
+```
+cmd/blue-bubbles/   flags, and wiring the packages together
+internal/config/    the config file: parse, validate, reload
+internal/store/     the SQLite state: watch cursor, inboxes, routes, threads
+internal/imsg/      the `imsg rpc` child process and its JSON-RPC
+internal/gateway/   routing in, sending out, the HTTP API, and the MCP server
+```

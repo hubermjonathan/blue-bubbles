@@ -9,6 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/hubermjonathan/blue-bubbles/internal/config"
+	"github.com/hubermjonathan/blue-bubbles/internal/gateway"
+	"github.com/hubermjonathan/blue-bubbles/internal/imsg"
+	"github.com/hubermjonathan/blue-bubbles/internal/store"
 )
 
 func main() {
@@ -18,11 +23,11 @@ func main() {
 	addr := flag.String("addr", ":8723", "listen address")
 	flag.Parse()
 
-	config, err := watchConfig(*configPath)
+	cfg, err := config.Watch(*configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
-	st, err := openStore(*dbPath)
+	st, err := store.Open(*dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -36,20 +41,20 @@ func main() {
 		return s, err
 	}
 
-	im := newIMsg("imsg")
-	g := newGateway(config, st, im, service)
-	go im.run()
-	go g.watch(im)
-	go g.sendLoop()
+	im := imsg.New("imsg")
+	g := gateway.New(cfg, st, im, service)
+	go im.Run()
+	go g.Watch(im)
+	go g.SendLoop()
 	go func() {
 		for ; ; time.Sleep(time.Hour) {
-			if err := st.prune(time.Now().AddDate(0, 0, -30)); err != nil {
+			if err := st.Prune(time.Now().AddDate(0, 0, -30)); err != nil {
 				log.Printf("prune: %v", err)
 			}
 		}
 	}()
 
 	log.Printf("listening on %s", *addr)
-	srv := &http.Server{Addr: *addr, Handler: g.routes(), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: *addr, Handler: g.Routes(), ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }

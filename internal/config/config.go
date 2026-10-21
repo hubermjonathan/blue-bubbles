@@ -1,4 +1,5 @@
-package main
+// Package config parses, validates, and reloads the gateway's config file.
+package config
 
 import (
 	"bytes"
@@ -35,14 +36,14 @@ var (
 	nameRE  = regexp.MustCompile(`^[a-z0-9_]+$`)
 )
 
-// watchConfig loads the config and reloads it whenever the file changes.
+// Watch loads the config and reloads it whenever the file changes.
 // A config that fails to load leaves the previous one in place.
-func watchConfig(path string) (func() *Config, error) {
+func Watch(path string) (func() *Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	c, err := parseConfig(b)
+	c, err := Parse(b)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -55,7 +56,7 @@ func watchConfig(path string) (func() *Config, error) {
 				continue
 			}
 			b = next
-			c, err := parseConfig(b)
+			c, err := Parse(b)
 			if err != nil {
 				log.Printf("config: %v; keeping the previous config", err)
 				continue
@@ -67,7 +68,7 @@ func watchConfig(path string) (func() *Config, error) {
 	return cur.Load, nil
 }
 
-func parseConfig(b []byte) (*Config, error) {
+func Parse(b []byte) (*Config, error) {
 	var c Config
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
@@ -109,7 +110,7 @@ func parseConfig(b []byte) (*Config, error) {
 	return &c, nil
 }
 
-func (c *Config) person(phone string) string {
+func (c *Config) Person(phone string) string {
 	for name, p := range c.People {
 		if p == phone {
 			return name
@@ -118,7 +119,7 @@ func (c *Config) person(phone string) string {
 	return ""
 }
 
-func (c *Config) mentioned(text string) []string {
+func (c *Config) Mentioned(text string) []string {
 	var names []string
 	for name, a := range c.Agents {
 		if a.mention.MatchString(text) {
@@ -129,13 +130,13 @@ func (c *Config) mentioned(text string) []string {
 	return names
 }
 
-// memberDM reports whether chatGUID is a direct chat with one of a's members.
+// MemberDM reports whether chatGUID is a direct chat with one of a's members.
 // Direct chat GUIDs look like "iMessage;-;+15551234567" or "any;-;+15551234567".
-func (c *Config) memberDM(a *Agent, chatGUID string) bool {
+func (c *Config) MemberDM(a *Agent, chatGUID string) bool {
 	parts := strings.SplitN(chatGUID, ";", 3)
 	if len(parts) != 3 || parts[1] != "-" {
 		return false
 	}
-	_, ok := a.Members[c.person(parts[2])]
+	_, ok := a.Members[c.Person(parts[2])]
 	return ok
 }
