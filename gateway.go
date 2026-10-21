@@ -354,8 +354,8 @@ func (g *gateway) checkSent(guid, sender string, to target, text string) {
 	}
 }
 
-func agentHeader(name string) string  { return "🤖 " + bold(name) + "\n" }
-func threadHeader(name string) string { return "🧵 " + bold(name) + "\n" }
+func agentHeader(name string) string  { return "🤖 " + bold(name) + "\n\n" }
+func threadHeader(name string) string { return "🧵 " + bold(name) + "\n\n" }
 
 // bold maps letters and digits to Unicode Mathematical Sans-Serif Bold, since iMessage has no bold text.
 func bold(s string) string {

@@ -13,7 +13,7 @@ An inbound text reaches an agent or a coding session's thread only when all of t
 - For an agent, the sender is one of its `members`, and the chat is the sender's direct chat or one of the agent's `groups`.
 - For a thread, the thread is open, and the owner sent the reply in their direct chat.
 
-Everything else is dropped without a reply. Each outbound text starts with `🤖 <agent>` or `🧵 <thread>` in sans-serif bold, such as `🤖 𝗯𝘂𝗱𝗴𝗲𝘁`. Texts go out one at a time, at least a second apart, in chunks of at most 2,000 characters.
+Everything else is dropped without a reply. Each outbound text starts with a header line, `🤖 <agent>` or `🧵 <thread>` in sans-serif bold, such as `🤖 𝗯𝘂𝗱𝗴𝗲𝘁`, and then a blank line. Texts go out one at a time, at least a second apart, in chunks of at most 2,000 characters.
 
 The owner can inline-reply `/close` to a thread's text to stop that session from texting.
 
