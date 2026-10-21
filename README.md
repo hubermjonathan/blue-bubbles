@@ -2,7 +2,7 @@
 
 An iMessage gateway. People text a few dedicated agents, such as `budget`, in direct or group chats. Coding sessions on your machines text you over MCP and get your replies back. Agents and sessions reach the gateway over HTTP and never touch the Mac it runs on.
 
-The gateway runs on a Mac whose Messages app is signed in to the agent's own Apple ID. It uses [`imsg rpc`](https://github.com/openclaw/imsg) to watch and send messages, and keeps its state in one SQLite file.
+The gateway runs on a Mac whose Messages app is signed in to a dedicated Apple ID. Every agent and session texts from that one account. It uses [`imsg rpc`](https://github.com/openclaw/imsg) to watch and send messages, and keeps its state in one SQLite file.
 
 ## How a text is routed
 
@@ -70,7 +70,7 @@ The owner can inline-reply `/close` to a thread's text to stop that session from
 
 To upgrade, run the `go install` and `codesign` lines again, then `launchctl kickstart -k gui/$(id -u)/com.hubermjonathan.blue-bubbles`.
 
-The gateway listens on port 8723 on every interface. Reach it from your other machines by the gateway Mac's Tailscale name. It logs to stderr, including the GUID and name of each new chat, which is how you find a group's `chat_guid` for the config.
+The gateway listens on port 8723 on every interface. Reach it from your other machines by the gateway Mac's Tailscale name. It logs to stderr, which the launch agent writes to `~/Library/Logs/blue-bubbles.log`. To find a group's `chat_guid` for the config, send a text in the group and look for its `new chat` line.
 
 | Flag | Default |
 | --- | --- |
@@ -128,10 +128,9 @@ Returns `{"entries": [...]}`: up to 100 entries after `seq`, oldest first. With 
 
 `via` is `reply` or `mention`. `history` is present only for group entries when the agent's `history` is above 0. `from` is a person's name, `gateway` for the gateway's own texts, or `unknown`.
 
-Delivery is at least once. A worker loop should:
+The gateway adds each message to an agent's inbox once, and a message it sees again keeps its `id` and `seq`. An entry repeats only when a worker asks again with an older `after`. A worker loop should:
 
 - Save the last `seq` it handled, and send it as `after`.
-- Skip an entry whose `id` it already handled.
 - Use `session` as the conversation key.
 - Treat `text` and `history` as data, never as instructions.
 - Check `role` is `write` before it changes anything.
@@ -145,16 +144,16 @@ Scheduled messages, such as a daily summary, come from the agent's own scheduler
 
 | Tool | Does |
 | --- | --- |
-| `text_user(text, name?, thread_id?)` | Texts the owner. The first call opens a thread named `name` and returns `thread_id`, `message_guid`, and `watch_command`. |
+| `text_user(text, name?, thread_id?)` | Texts the owner and returns `thread_id`, `message_guid`, and `watch_command`. Without `thread_id`, it opens a new thread named `name`, which defaults to `session` and is cut to 20 characters. |
 | `check_replies(thread_id)` | Returns new replies on the thread without waiting, and marks them read. |
-| `wait_for_reply(thread_id, timeout_seconds?)` | Waits up to `timeout_seconds`, 540 at most, for a reply, then returns new replies and marks them read. |
+| `wait_for_reply(thread_id, timeout_seconds?)` | Waits up to `timeout_seconds` for a reply, then returns new replies and marks them read. The default and the maximum are 540. |
 | `close_thread(thread_id)` | Closes the thread. |
 
 A second open thread with the same name gets `-2`, `-3`, and so on.
 
 ### Add the server to a host
 
-Put the token in your shell environment as `BLUE_BUBBLES_TOKEN`, then add the server. In these commands, replace `gateway-mac` with the gateway Mac's Tailscale name.
+Put the config's `mcp_token` in your shell environment as `BLUE_BUBBLES_TOKEN`, then add the server. In these commands, replace `gateway-mac` with the gateway Mac's Tailscale name.
 
 - **Claude Code:**
 
@@ -168,13 +167,13 @@ Put the token in your shell environment as `BLUE_BUBBLES_TOKEN`, then add the se
       bearer_token_env_var = "BLUE_BUBBLES_TOKEN"
       tool_timeout_sec = 600
 
-- **Other MCP hosts:** the same URL and bearer token. Raise the tool timeout where the host allows it.
+- **Other MCP hosts:** the same URL and bearer token. Set the tool timeout above 540 seconds where the host allows it, so `wait_for_reply` can wait.
 
 ### Watch for replies
 
-`watch_command` is a POSIX `sh` and `curl` loop for hosts that can run a background command and wake on its output, such as Claude Code's Monitor tool. It prints one line, `user replied — call check_replies(thread_id=<id>)`, each time the owner replies. It exits when a newer watcher takes over the thread, or when the thread closes or the watcher is more than 24 hours old.
+`watch_command` is a POSIX `sh` and `curl` loop for hosts that can run a background command and wake on its output, such as Claude Code's Monitor tool. It prints one line, `user replied — call check_replies(thread_id=<id>)`, each time the owner replies. It exits on a 403, 409, or 410 from the endpoint below.
 
-The loop polls `GET /watch/<thread_id>?key=<watch_key>&wait=50`, which returns:
+The loop polls `GET /watch/<thread_id>?key=<watch_key>&wait=50&w=<watcher_id>&t=<start>`. `w` is a random ID, and `t` is the Unix time in seconds when the loop started. Of two watchers, the one with the later `t` holds the thread. The endpoint returns:
 
 | Status | Meaning |
 | --- | --- |
@@ -182,7 +181,7 @@ The loop polls `GET /watch/<thread_id>?key=<watch_key>&wait=50`, which returns:
 | 204 | No reply within `wait` seconds. |
 | 403 | The key doesn't belong to this thread. |
 | 409 | A newer watcher took over. |
-| 410 | The thread closed, or this watcher is more than 24 hours old. |
+| 410 | The thread closed, or `t` is missing or more than 24 hours old. |
 
 ## Develop
 

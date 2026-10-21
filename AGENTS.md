@@ -1,8 +1,5 @@
 # blue-bubbles
 
-`README.md` is the reference: routing rules, config, the HTTP API, and the MCP tools. This file holds only what it doesn't.
-
-- Tool descriptions and server instructions in `mcp.go` are the text that makes models call the tools. Change them only on purpose.
-- A change to the routing rules updates "How a text is routed" in `README.md` and the tests in `gateway_test.go`.
-- `go test ./...` runs everything against a fake `imsg`. Nothing in the tests sends a real text.
+- `instructions` and the `*Description` constants in `mcp.go` are prompts that decide when models call the tools. Reword them only when the task is to change that behavior.
+- `README.md` is the reference for routing, the outbound format, config, flags, the HTTP API, the MCP tools, and the watch statuses. A change to any of them updates its `README.md` section and the tests in `gateway_test.go` in the same commit.
 - Phone numbers, tokens, and chat GUIDs live in the gateway Mac's config file, never in this repo.
