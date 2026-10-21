@@ -19,9 +19,16 @@ The owner can inline-reply `/close` to a thread's text to stop that session from
 
 ## Run it
 
-On a machine set up by [dot](https://github.com/hubermjonathan/dot), the `blue-bubbles` module does steps 1, 2, and 5. Elsewhere, do them by hand.
-
 1. Create a self-signed code-signing certificate named `blue-bubbles` in your login keychain. Full Disk Access is tied to the binary's signature. An ad-hoc signature changes with every build, but a certificate's doesn't, so the grant survives upgrades.
+
+       d=$(mktemp -d)
+       /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=blue-bubbles \
+         -addext keyUsage=critical,digitalSignature -addext extendedKeyUsage=critical,codeSigning \
+         -keyout $d/key.pem -out $d/cert.pem
+       /usr/bin/openssl pkcs12 -export -inkey $d/key.pem -in $d/cert.pem -out $d/id.p12 -passout pass:import
+       security import $d/id.p12 -k ~/Library/Keychains/login.keychain-db -P import -T /usr/bin/codesign
+       rm -rf $d
+
 2. Install `imsg` and the gateway, and sign the gateway:
 
        brew install steipete/tap/imsg
@@ -30,7 +37,35 @@ On a machine set up by [dot](https://github.com/hubermjonathan/dot), the `blue-b
 
 3. Write `~/.config/blue-bubbles/config.yaml` from [`config.example.yaml`](config.example.yaml), and `chmod 600` it. Make each token with `openssl rand -hex 32`.
 4. Give `~/go/bin/blue-bubbles` Full Disk Access in **System Settings > Privacy & Security > Full Disk Access**.
-5. Run the gateway as a launch agent, so it starts at login and restarts if it exits.
+5. Run the gateway as a launch agent, so it starts at login and restarts if it exits:
+
+       cat > ~/Library/LaunchAgents/com.hubermjonathan.blue-bubbles.plist <<EOF
+       <?xml version="1.0" encoding="UTF-8"?>
+       <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+       <plist version="1.0">
+       <dict>
+         <key>Label</key>
+         <string>com.hubermjonathan.blue-bubbles</string>
+         <key>ProgramArguments</key>
+         <array>
+           <string>$HOME/go/bin/blue-bubbles</string>
+         </array>
+         <key>EnvironmentVariables</key>
+         <dict>
+           <key>PATH</key>
+           <string>/opt/homebrew/bin:/usr/bin:/bin</string>
+         </dict>
+         <key>RunAtLoad</key>
+         <true/>
+         <key>KeepAlive</key>
+         <true/>
+         <key>StandardErrorPath</key>
+         <string>$HOME/Library/Logs/blue-bubbles.log</string>
+       </dict>
+       </plist>
+       EOF
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hubermjonathan.blue-bubbles.plist
+
 6. Approve the prompt that asks to let `blue-bubbles` control Messages. It appears on the first send.
 
 To upgrade, run the `go install` and `codesign` lines again, then `launchctl kickstart -k gui/$(id -u)/com.hubermjonathan.blue-bubbles`.
