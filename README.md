@@ -13,21 +13,62 @@ An inbound text reaches an agent or a coding session's thread only when all of t
 - For an agent, the sender is one of its `members`, and the chat is the sender's direct chat or one of the agent's `groups`.
 - For a thread, the thread is open, and the owner sent the reply in their direct chat.
 
-Everything else is dropped without a reply. Each outbound text starts with `🤖 <agent>` or `🧵 <thread>` in sans-serif bold, such as `🤖 𝗯𝘂𝗱𝗴𝗲𝘁`. Texts go out one at a time, at least a second apart, in chunks of at most 2,000 characters.
+Everything else is dropped without a reply. Each outbound text starts with a header line, `🤖 <agent>` or `🧵 <thread>` in sans-serif bold, such as `🤖 𝗯𝘂𝗱𝗴𝗲𝘁`, and then a blank line. Texts go out one at a time, at least a second apart, in chunks of at most 2,000 characters.
 
 The owner can inline-reply `/close` to a thread's text to stop that session from texting.
 
 ## Run it
 
-1. Install `imsg` and the gateway:
+1. Create a self-signed code-signing certificate named `blue-bubbles` in your login keychain. Full Disk Access is tied to the binary's signature. An ad-hoc signature changes with every build, but a certificate's doesn't, so the grant survives upgrades.
+
+       d=$(mktemp -d)
+       /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=blue-bubbles \
+         -addext keyUsage=critical,digitalSignature -addext extendedKeyUsage=critical,codeSigning \
+         -keyout $d/key.pem -out $d/cert.pem
+       /usr/bin/openssl pkcs12 -export -inkey $d/key.pem -in $d/cert.pem -out $d/id.p12 -passout pass:import
+       security import $d/id.p12 -k ~/Library/Keychains/login.keychain-db -P import -T /usr/bin/codesign
+       rm -rf $d
+
+2. Install `imsg` and the gateway, and sign the gateway:
 
        brew install steipete/tap/imsg
        go install github.com/hubermjonathan/blue-bubbles@latest
+       codesign -fs blue-bubbles ~/go/bin/blue-bubbles
 
-2. Write `~/.config/blue-bubbles/config.yaml` from [`config.example.yaml`](config.example.yaml), and `chmod 600` it. Make each token with `openssl rand -hex 32`.
-3. Give `~/go/bin/blue-bubbles` Full Disk Access in **System Settings > Privacy & Security > Full Disk Access**. A rebuilt binary needs the grant again: remove it from the list and add it back.
-4. Run the gateway as a launch agent, so it starts at login and restarts if it exits. On a machine set up by [dot](https://github.com/hubermjonathan/dot), the `blue-bubbles` module does this.
-5. Approve the prompt that asks to let `blue-bubbles` control Messages. It appears on the first send.
+3. Write `~/.config/blue-bubbles/config.yaml` from [`config.example.yaml`](config.example.yaml), and `chmod 600` it. Make each token with `openssl rand -hex 32`.
+4. Give `~/go/bin/blue-bubbles` Full Disk Access in **System Settings > Privacy & Security > Full Disk Access**.
+5. Run the gateway as a launch agent, so it starts at login and restarts if it exits:
+
+       cat > ~/Library/LaunchAgents/com.hubermjonathan.blue-bubbles.plist <<EOF
+       <?xml version="1.0" encoding="UTF-8"?>
+       <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+       <plist version="1.0">
+       <dict>
+         <key>Label</key>
+         <string>com.hubermjonathan.blue-bubbles</string>
+         <key>ProgramArguments</key>
+         <array>
+           <string>$HOME/go/bin/blue-bubbles</string>
+         </array>
+         <key>EnvironmentVariables</key>
+         <dict>
+           <key>PATH</key>
+           <string>/opt/homebrew/bin:/usr/bin:/bin</string>
+         </dict>
+         <key>RunAtLoad</key>
+         <true/>
+         <key>KeepAlive</key>
+         <true/>
+         <key>StandardErrorPath</key>
+         <string>$HOME/Library/Logs/blue-bubbles.log</string>
+       </dict>
+       </plist>
+       EOF
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hubermjonathan.blue-bubbles.plist
+
+6. Approve the prompt that asks to let `blue-bubbles` control Messages. It appears on the first send.
+
+To upgrade, run the `go install` and `codesign` lines again, then `launchctl kickstart -k gui/$(id -u)/com.hubermjonathan.blue-bubbles`.
 
 The gateway listens on port 8723 on every interface. Reach it from your other machines by the gateway Mac's Tailscale name. It logs to stderr, including the GUID and name of each new chat, which is how you find a group's `chat_guid` for the config.
 
