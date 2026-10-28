@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	jon = "+15550000001"
-	jac = "+15550000002"
+	ana = "+15550000001"
+	ben = "+15550000002"
 	sam = "+15550000003"
 
 	family = "any;+;family"
@@ -30,20 +30,20 @@ const (
 )
 
 const testConfig = `
-owner: jon
+owner: ana
 people:
-  jon: "+15550000001"
-  jac: "+15550000002"
+  ana: "+15550000001"
+  ben: "+15550000002"
   sam: "+15550000003"
 agents:
   budget:
     token: budget-token
-    members: { jon: write, jac: read }
+    members: { ana: write, ben: read }
     groups: ["any;+;family"]
     history: 2
   garden:
     token: garden-token
-    members: { jon: write, jac: write }
+    members: { ana: write, ben: write }
     groups: ["any;+;family"]
 mcp_token: mcp-token
 `
@@ -236,34 +236,34 @@ func equal(t *testing.T, got, want any) {
 
 func TestAgentAnswersInDM(t *testing.T) {
 	e := newEnv(t)
-	e.text(jon, "", "@budget balance?", "")
+	e.text(ana, "", "@budget balance?", "")
 
 	got := e.inbox("budget")
 	equal(t, len(got), 1)
 	entry := got[0].(map[string]any)
-	equal(t, entry["session"], "budget:any;-;"+jon)
-	equal(t, entry["person"], "jon")
+	equal(t, entry["session"], "budget:any;-;"+ana)
+	equal(t, entry["person"], "ana")
 	equal(t, entry["role"], "write")
 	equal(t, entry["via"], "mention")
 	equal(t, entry["is_group"], false)
 	equal(t, len(e.inbox("garden")), 0)
 
-	code, out := e.agentSend("budget", `{"chat_guid": "any;-;`+jon+`"}`, "Groceries: $412 of $600")
+	code, out := e.agentSend("budget", `{"chat_guid": "any;-;`+ana+`"}`, "Groceries: $412 of $600")
 	equal(t, code, 200)
 	equal(t, out["message_guid"], "out-1")
 	equal(t, e.f.last()["text"], "🤖 𝗯𝘂𝗱𝗴𝗲𝘁\n\nGroceries: $412 of $600")
-	equal(t, e.f.last()["chat_guid"], "any;-;"+jon)
+	equal(t, e.f.last()["chat_guid"], "any;-;"+ana)
 
-	e.agentSend("budget", `{"person": "jac"}`, "hi")
-	equal(t, e.f.last()["to"], jac)
+	e.agentSend("budget", `{"person": "ben"}`, "hi")
+	equal(t, e.f.last()["to"], ben)
 	equal(t, e.f.last()["service"], "imessage")
 }
 
 func TestInlineReplyReachesTheAgent(t *testing.T) {
 	e := newEnv(t)
-	_, out := e.agentSend("budget", `{"person": "jon"}`, "Move $50 to savings?")
-	e.text(jon, "", "yes", out["message_guid"].(string))
-	e.text(jon, "", "yes", "")
+	_, out := e.agentSend("budget", `{"person": "ana"}`, "Move $50 to savings?")
+	e.text(ana, "", "yes", out["message_guid"].(string))
+	e.text(ana, "", "yes", "")
 
 	got := e.inbox("budget")
 	equal(t, texts(got), []string{"yes"})
@@ -272,11 +272,11 @@ func TestInlineReplyReachesTheAgent(t *testing.T) {
 
 func TestGroupRouting(t *testing.T) {
 	e := newEnv(t)
-	e.text(jon, family, "@garden water today?", "")
-	e.text(jac, family, "@budget @garden hi both", "")
+	e.text(ana, family, "@garden water today?", "")
+	e.text(ben, family, "@budget @garden hi both", "")
 	_, out := e.agentSend("garden", `{"chat_guid": "`+family+`"}`, "Rain tomorrow")
-	e.text(jac, family, "nice", out["message_guid"].(string))
-	e.text(jon, family, "dinner at 6", "")
+	e.text(ben, family, "nice", out["message_guid"].(string))
+	e.text(ana, family, "dinner at 6", "")
 
 	equal(t, texts(e.inbox("garden")), []string{"@garden water today?", "@budget @garden hi both", "nice"})
 	equal(t, texts(e.inbox("budget")), []string{"@budget @garden hi both"})
@@ -285,14 +285,14 @@ func TestGroupRouting(t *testing.T) {
 func TestGroupNeedsAMemberAndAConfiguredGroup(t *testing.T) {
 	e := newEnv(t)
 	e.f.history = []message{
-		{ID: 4, Sender: jac, Text: "@budget total?"},
+		{ID: 4, Sender: ben, Text: "@budget total?"},
 		{ID: 3, IsFromMe: true, Text: "🤖 𝗴𝗮𝗿𝗱𝗲𝗻\nRain tomorrow"},
 		{ID: 2, Sender: sam, Text: "pizza?"},
 	}
 	e.text(sam, family, "@budget hi", "")
-	e.text(jon, other, "@budget hi", "")
+	e.text(ana, other, "@budget hi", "")
 	e.text(sam, family, "pizza?", "")
-	e.text(jac, family, "@budget total?", "")
+	e.text(ben, family, "@budget total?", "")
 
 	got := e.inbox("budget")
 	equal(t, texts(got), []string{"@budget total?"})
@@ -313,11 +313,11 @@ func TestInboxWaitsAndKeepsOrder(t *testing.T) {
 		done <- out["entries"].([]any)
 	}()
 	time.Sleep(200 * time.Millisecond)
-	e.text(jon, "", "@budget one", "")
+	e.text(ana, "", "@budget one", "")
 	equal(t, texts(<-done), []string{"@budget one"})
 
-	e.text(jon, "", "@budget two", "")
-	e.text(jon, "", "@budget three", "")
+	e.text(ana, "", "@budget two", "")
+	e.text(ana, "", "@budget three", "")
 	got := e.inbox("budget")
 	equal(t, texts(got), []string{"@budget one", "@budget two", "@budget three"})
 	after := int64(got[0].(map[string]any)["seq"].(float64))
@@ -330,18 +330,18 @@ func TestThreadRepliesAndWatcher(t *testing.T) {
 	s := e.mcp()
 	sent := e.tool(s, "text_user", map[string]any{"text": "Tests pass. Deploy?", "name": "deploy"})
 	equal(t, e.f.last()["text"], "🧵 𝗱𝗲𝗽𝗹𝗼𝘆\n\nTests pass. Deploy?")
-	equal(t, e.f.last()["to"], jon)
+	equal(t, e.f.last()["to"], ana)
 	id := sent["thread_id"].(string)
 
 	lines := e.watch(sent["watch_command"].(string))
 	time.Sleep(300 * time.Millisecond)
-	e.text(jon, "", "yes", sent["message_guid"].(string))
+	e.text(ana, "", "yes", sent["message_guid"].(string))
 	line, _ := receive(t, lines)
 	equal(t, line, "user replied — call check_replies(thread_id="+id+")")
 
-	e.text(jon, "", "and tag it", sent["message_guid"].(string))
-	e.text(jon, "", "not a reply", "")
-	e.text(jac, "", "jac is not the owner", sent["message_guid"].(string))
+	e.text(ana, "", "and tag it", sent["message_guid"].(string))
+	e.text(ana, "", "not a reply", "")
+	e.text(ben, "", "ben is not the owner", sent["message_guid"].(string))
 	got := e.tool(s, "check_replies", map[string]any{"thread_id": id})
 	equal(t, texts(got["replies"].([]any)), []string{"yes", "and tag it"})
 	equal(t, len(e.tool(s, "check_replies", map[string]any{"thread_id": id})["replies"].([]any)), 0)
@@ -364,7 +364,7 @@ func TestWaitForReply(t *testing.T) {
 		done <- e.tool(s, "wait_for_reply", map[string]any{"thread_id": sent["thread_id"], "timeout_seconds": 10})
 	}()
 	time.Sleep(300 * time.Millisecond)
-	e.text(jon, "", "main", sent["message_guid"].(string))
+	e.text(ana, "", "main", sent["message_guid"].(string))
 	equal(t, texts((<-done)["replies"].([]any)), []string{"main"})
 }
 
@@ -375,7 +375,7 @@ func TestCloseByReply(t *testing.T) {
 	lines := e.watch(sent["watch_command"].(string))
 	time.Sleep(300 * time.Millisecond)
 
-	e.text(jon, "", "/close", sent["message_guid"].(string))
+	e.text(ana, "", "/close", sent["message_guid"].(string))
 	if _, ok := receive(t, lines); ok {
 		t.Fatal("the watcher printed instead of exiting")
 	}
@@ -385,7 +385,7 @@ func TestCloseByReply(t *testing.T) {
 		}
 	}
 
-	e.text(jon, "", "one more thing", sent["message_guid"].(string))
+	e.text(ana, "", "one more thing", sent["message_guid"].(string))
 	equal(t, len(e.tool(s, "check_replies", map[string]any{"thread_id": sent["thread_id"]})["replies"].([]any)), 0)
 	if e.tool(s, "text_user", map[string]any{"text": "hi", "thread_id": sent["thread_id"]})["error"] == nil {
 		t.Fatal("text_user sent on a closed thread")
@@ -431,12 +431,12 @@ func TestRejects(t *testing.T) {
 
 func TestDrops(t *testing.T) {
 	e := newEnv(t)
-	e.handle(message{ID: 1, GUID: "sms-1", Sender: jon, ChatGUID: "any;-;" + jon, Text: "@budget via SMS"})
-	e.handle(message{ID: 2, GUID: "in-2", Sender: "jon@icloud.com", ChatGUID: "any;-;jon@icloud.com", Text: "@budget via email"})
-	e.handle(message{ID: 3, GUID: "in-3", Sender: jon, ChatGUID: "any;-;" + jon, Text: "@budget from me", IsFromMe: true})
-	e.handle(message{ID: 4, GUID: "in-4", Sender: jon, ChatGUID: "any;-;" + jon, Text: " "})
-	e.handle(message{ID: 5, GUID: "in-5", Sender: jon, ChatGUID: "any;-;" + jon, Text: "mail me@budget.com"})
-	e.handle(message{ID: 6, GUID: "in-6", Sender: jon, ChatGUID: "any;-;" + jon, Text: "Loved “@budget hi”", IsReaction: true})
+	e.handle(message{ID: 1, GUID: "sms-1", Sender: ana, ChatGUID: "any;-;" + ana, Text: "@budget via SMS"})
+	e.handle(message{ID: 2, GUID: "in-2", Sender: "ana@example.com", ChatGUID: "any;-;ana@example.com", Text: "@budget via email"})
+	e.handle(message{ID: 3, GUID: "in-3", Sender: ana, ChatGUID: "any;-;" + ana, Text: "@budget from me", IsFromMe: true})
+	e.handle(message{ID: 4, GUID: "in-4", Sender: ana, ChatGUID: "any;-;" + ana, Text: " "})
+	e.handle(message{ID: 5, GUID: "in-5", Sender: ana, ChatGUID: "any;-;" + ana, Text: "mail me@budget.com"})
+	e.handle(message{ID: 6, GUID: "in-6", Sender: ana, ChatGUID: "any;-;" + ana, Text: "Loved “@budget hi”", IsReaction: true})
 	equal(t, len(e.inbox("budget")), 0)
 	rowid, _ := e.g.store.Cursor()
 	equal(t, rowid, 6)
@@ -447,13 +447,13 @@ func TestEditsAreDropped(t *testing.T) {
 	e := newEnv(t)
 	s := e.mcp()
 	sent := e.tool(s, "text_user", map[string]any{"text": "Deploy?", "name": "deploy"})
-	reply := e.text(jon, "", "yes", sent["message_guid"].(string))
-	plain := e.text(jon, "", "balance?", "")
-	dm := "any;-;" + jon
+	reply := e.text(ana, "", "yes", sent["message_guid"].(string))
+	plain := e.text(ana, "", "balance?", "")
+	dm := "any;-;" + ana
 	for _, edit := range []string{
 		fmt.Sprintf(`{"id": 1, "guid": %q, "sender": %q, "chat_guid": %q, "thread_originator_guid": %q, "text": "/close", "type": "edited"}`,
-			reply, jon, dm, sent["message_guid"]),
-		fmt.Sprintf(`{"id": 2, "guid": %q, "sender": %q, "chat_guid": %q, "text": "@budget balance?", "type": "edited"}`, plain, jon, dm),
+			reply, ana, dm, sent["message_guid"]),
+		fmt.Sprintf(`{"id": 2, "guid": %q, "sender": %q, "chat_guid": %q, "text": "@budget balance?", "type": "edited"}`, plain, ana, dm),
 	} {
 		var m message
 		if err := json.Unmarshal([]byte(edit), &m); err != nil {
@@ -469,7 +469,7 @@ func TestEditsAreDropped(t *testing.T) {
 
 func TestRedeliveryKeepsIDAndSeq(t *testing.T) {
 	e := newEnv(t)
-	m := message{ID: 7, GUID: "in-7", Sender: jon, ChatGUID: "any;-;" + jon, Text: "@budget hi"}
+	m := message{ID: 7, GUID: "in-7", Sender: ana, ChatGUID: "any;-;" + ana, Text: "@budget hi"}
 	e.handle(m)
 	first := e.inbox("budget")
 	e.handle(m)
@@ -479,7 +479,7 @@ func TestRedeliveryKeepsIDAndSeq(t *testing.T) {
 func TestLongTextSplitsWithHeaders(t *testing.T) {
 	e := newEnv(t)
 	word := strings.Repeat("x", 9) + " "
-	e.agentSend("budget", `{"person": "jon"}`, strings.Repeat(word, 450))
+	e.agentSend("budget", `{"person": "ana"}`, strings.Repeat(word, 450))
 	equal(t, len(e.f.sent), 3)
 	for _, p := range e.f.sent {
 		text := p["text"].(string)

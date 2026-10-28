@@ -101,7 +101,7 @@ Every request carries `Authorization: Bearer <agent token>`.
 
 ```json
 {"to": {"chat_guid": "any;+;chat123"}, "text": "Groceries: $412 of $600"}
-{"to": {"person": "jon"}, "text": "Groceries: $412 of $600"}
+{"to": {"person": "ana"}, "text": "Groceries: $412 of $600"}
 ```
 
 Returns `{"message_guid": "..."}`. Returns 403 unless the target is a member's direct chat or one of the agent's groups.
@@ -117,12 +117,12 @@ Returns `{"entries": [...]}`: up to 100 entries after `seq`, oldest first. With 
   "session": "budget:any;+;chat123",
   "chat_guid": "any;+;chat123",
   "is_group": true,
-  "person": "jac",
+  "person": "ben",
   "role": "read",
   "text": "@budget how much is left for groceries?",
   "received_at": "2026-10-21T17:02:11Z",
   "via": "mention",
-  "history": [{"from": "jon", "text": "dinner at 6?", "at": "2026-10-21T17:01:40Z"}]
+  "history": [{"from": "ana", "text": "dinner at 6?", "at": "2026-10-21T17:01:40Z"}]
 }
 ```
 
@@ -153,17 +153,17 @@ A second open thread with the same name gets `-2`, `-3`, and so on.
 
 ### Add the server to a host
 
-Put the config's `mcp_token` in your shell environment as `BLUE_BUBBLES_TOKEN`, then add the server. In these commands, `macbook` is the gateway Mac's Tailscale name.
+Put the config's `mcp_token` in your shell environment as `BLUE_BUBBLES_TOKEN`, then add the server. In these commands, replace `gateway-mac` with the gateway Mac's Tailscale name.
 
 - **Claude Code:**
 
-      claude mcp add --scope user --transport http blue-bubbles http://macbook:8723/mcp \
+      claude mcp add --scope user --transport http blue-bubbles http://gateway-mac:8723/mcp \
         --header 'Authorization: Bearer ${BLUE_BUBBLES_TOKEN}'
 
 - **Codex**, in `~/.codex/config.toml`. Raise the tool timeout so `wait_for_reply` can wait:
 
       [mcp_servers.blue-bubbles]
-      url = "http://macbook:8723/mcp"
+      url = "http://gateway-mac:8723/mcp"
       bearer_token_env_var = "BLUE_BUBBLES_TOKEN"
       tool_timeout_sec = 600
 
